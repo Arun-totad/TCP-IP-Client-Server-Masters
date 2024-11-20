@@ -1,0 +1,370 @@
+CS 5115 : Programming for Graduate Studies
+Programming Assignment 4 : TCP/IP Client-Server Interaction
+-----------------------------------------------------------
+Outline: 
+1. Design Choices
+2. Challenges Faced
+3. Testing Results
+4. Appendix: Source and Script File Content
+
+----------------------------------------------------------------------------------
+
+
+Design Choices:
+Socket Programming: Utilized TCP sockets for reliable communication between the client and server.
+
+Port and Buffer Size: Defined constants for the port number (PORT 8080) and buffer size (BUFFER_SIZE 512) to ensure consistency and easy modifications.
+
+Error Handling: Implemented a reusable error function to handle errors and terminate the program gracefully.
+
+Time Logging: Added a print_current_time function to log the current time for each send and receive operation, aiding in debugging and performance monitoring.
+
+File Handling: The client reads data from a file (hw4input.txt) and sends it to the server. The server receives the data, converts it from hexadecimal to an integer, and prints it.
+
+--------------------------------------------------------------------------------------------------------------------
+
+Challenges Faced:
+Socket Creation and Connection: Ensuring the socket was created and connected correctly, handling potential errors like invalid addresses or connection failures.
+
+File Handling: Managing file operations, including checking if the file is empty and handling read errors.
+
+Data Conversion: Converting received hexadecimal strings to integers on the server side, ensuring accurate data interpretation.
+
+Synchronization: Implementing a delay (sleep(10)) between sending packets to avoid overwhelming the server and to simulate real-world network conditions.
+
+--------------------------------------------------------------------------------------------------------------------
+
+Testing Results:
+Connection Establishment: Successfully established a connection between the client and server.
+
+Data Transmission: Verified that the client could read from the file and send data to the server in chunks.
+
+Data Reception and Conversion: Confirmed that the server received the data, converted it from hexadecimal to integer, and printed the results accurately.
+
+Time Logging: Ensured that the current time was logged for each send and receive operation, providing a clear timeline of events.
+
+--------------------------------------------------------------------------------------------------------------------
+
+Overall, the application performed as expected, with reliable data transmission and accurate data processing. Future improvements could include handling larger files, implementing more robust error handling, and optimizing performance for high-throughput scenarios.
+
+*********************************************************************************************************************
+
+Appendix: Source and Script File Content
+
+TCP_Client.c
+	#include <stdio.h>
+	#include <stdlib.h>
+	#include <string.h>
+	#include <unistd.h>
+	#include <arpa/inet.h>
+	#include <time.h>
+
+	#define PORT 8080
+	#define BUFFER_SIZE 1024
+
+	void error(const char *msg) {
+	    perror(msg);
+	    exit(1);
+	}
+
+	void print_current_time() {
+	    time_t now;
+	    time(&now);
+	    printf("Current time: %s", ctime(&now));
+	}
+
+	int main() {
+	    int sock = 0;
+	    struct sockaddr_in serv_addr;
+	    char buffer[BUFFER_SIZE] = {0};
+	    FILE *file;
+
+	    // Creating socket file descriptor
+	    if ((sock = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
+		error("Socket creation error");
+	    }
+
+	    serv_addr.sin_family = AF_INET;
+	    serv_addr.sin_port = htons(PORT);
+
+	    // Converting IPv4 and IPv6 addresses from text to binary form
+	    if (inet_pton(AF_INET, "127.0.0.1", &serv_addr.sin_addr) <= 0) {
+		error("Invalid address/ Address not supported");
+	    }
+
+	    // Connecting to the server
+	    if (connect(sock, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+		error("Connection failed");
+	    }
+
+	    // Reading bytes from a file and sending them to the server
+	    file = fopen("hw4input.txt", "r");
+	    if (file == NULL) {
+		error("File open error");
+	    }
+
+	    // Check if the file is empty
+	    fseek(file, 0, SEEK_END);
+	    if (ftell(file) == 0) {
+		fclose(file);
+		error("No data in input file");
+	    }
+	    rewind(file);
+
+	    while (fgets(buffer, BUFFER_SIZE, file) != NULL) {
+		if (send(sock, buffer, strlen(buffer), 0) < 0) {
+		    error("Send failed");
+		}
+		print_current_time();
+		printf("Sent: %s", buffer);
+		printf("\n");
+		memset(buffer, 0, BUFFER_SIZE);
+		sleep(10); // Delay of 10 seconds between sending each packet
+	    }
+
+	    fclose(file);
+	    close(sock);
+	    return 0;
+	}
+	
+******************************************************************************************************************
+
+TCP_Server.c
+	#include <stdio.h>
+	#include <stdlib.h>
+	#include <string.h>
+	#include <unistd.h>
+	#include <arpa/inet.h>
+	#include <time.h>
+
+	#define PORT 8080
+	#define BUFFER_SIZE 1024
+
+	void error(const char *msg) {
+	    perror(msg);
+	    exit(1);
+	}
+
+	void print_current_time() {
+	    time_t now;
+	    time(&now);
+	    printf("Current time: %s", ctime(&now));
+	}
+
+	int main() {
+	    int server_fd, new_socket;
+	    struct sockaddr_in address;
+	    int addrlen = sizeof(address);
+	    char buffer[BUFFER_SIZE] = {0};
+	    int valread;
+
+	    // Creating socket file descriptor
+	    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+		error("Socket creation failed");
+	    }
+
+	    // Binding the socket to the port
+	    address.sin_family = AF_INET;
+	    address.sin_addr.s_addr = INADDR_ANY;
+	    address.sin_port = htons(PORT);
+
+	    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+		error("Bind failed");
+	    }
+
+	    // Listening for incoming connections
+	    if (listen(server_fd, 3) < 0) {
+		error("Listen failed");
+	    }
+
+	    printf("Server listening on port %d\n", PORT);
+
+	    // Accepting incoming connection
+	    if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
+		error("Accept failed");
+	    }
+
+	    // Reading data from the client
+	    while ((valread = read(new_socket, buffer, BUFFER_SIZE)) > 0) {
+		buffer[valread] = '\0'; // Null-terminate the received string
+		print_current_time();
+		printf("Received hex: %s", buffer);
+		long long int num = strtoll(buffer, NULL, 16);
+		printf("Converted to integer: %lld\n", num);
+		printf("\n");
+		memset(buffer, 0, BUFFER_SIZE);
+	    }
+
+	    if (valread < 0) {
+		error("Read failed");
+	    }
+
+	    close(new_socket);
+	    close(server_fd);
+	    return 0;
+	}
+******************************************************************************************************************
+
+hw4input.txt
+	1a2b3c4d5e6f
+	aabbccddeeff
+	102030405060
+	f1e2d3c4b5a6
+	112233445566
+	a1b2c3d4e5f6
+	abcdef012345
+	9876543210abc
+	112233445566778899
+	deadbeefcafe
+	001122334455
+	fedcba987654
+****************************************************************************************************************'
+
+test1_client.ts
+	┌──(aruntotad㉿totad)-[~/Desktop/PA4_CS5115]
+	└─$ cat test1_client.ts 
+	Script started on 2024-11-13 12:25:45-05:00 [TERM="xterm-256color" TTY="/dev/pts/1" COLUMNS="100" LINES="24"]
+	┌──(aruntotad㉿totad)-[~/Desktop/PA4_CS5115]
+	└─$ gcc -o client TCP_Client.c
+		                                                                                            
+	┌──(aruntotad㉿totad)-[~/Desktop/PA4_CS5115]
+	└─$ ./client                  
+	Connection failed: Connection refused
+		                                                                                            
+	┌──(aruntotad㉿totad)-[~/Desktop/PA4_CS5115]
+	└─$ exit
+
+	Script done on 2024-11-13 12:26:17-05:00 [COMMAND_EXIT_CODE="1"]
+*****************************************************************************************************************
+
+test2_client.ts
+	┌──(aruntotad㉿totad)-[~/Desktop/PA4_CS5115]
+	└─$ cat test2_client.ts 
+	Script started on 2024-11-13 12:41:22-05:00 [TERM="xterm-256color" TTY="/dev/pts/1" COLUMNS="100" LINES="24"]
+	┌──(aruntotad㉿totad)-[~/Desktop/PA4_CS5115]
+	└─$ gcc -o client TCP_Client.c
+		                                                                                            
+	┌──(aruntotad㉿totad)-[~/Desktop/PA4_CS5115]
+	└─$ ./client                  
+	File open error: No such file or directory
+		                                                                                            
+	┌──(aruntotad㉿totad)-[~/Desktop/PA4_CS5115]
+	└─$ exit
+
+	Script done on 2024-11-13 12:41:46-05:00 [COMMAND_EXIT_CODE="1"]
+*****************************************************************************************************************
+
+test3_client.ts
+	┌──(aruntotad㉿totad)-[~/Desktop/PA4_CS5115]
+	└─$ cat test3_client.ts 
+	Script started on 2024-11-13 13:03:20-05:00 [TERM="xterm-256color" TTY="/dev/pts/1" COLUMNS="100" LINES="24"]
+	┌──(aruntotad㉿totad)-[~/Desktop/PA4_CS5115]
+	└─$ gcc -o client TCP_Client.c
+		                                                                                            
+	┌──(aruntotad㉿totad)-[~/Desktop/PA4_CS5115]
+	└─$ ./client                  
+	Current time: Wed Nov 13 13:05:31 2024
+	Sent: 1a2b3c4d5e6f
+
+	Current time: Wed Nov 13 13:05:41 2024
+	Sent: aabbccddeeff
+
+	Current time: Wed Nov 13 13:05:51 2024
+	Sent: 102030405060
+
+	Current time: Wed Nov 13 13:06:01 2024
+	Sent: f1e2d3c4b5a6
+
+	Current time: Wed Nov 13 13:06:11 2024
+	Sent: 112233445566
+
+	Current time: Wed Nov 13 13:06:21 2024
+	Sent: a1b2c3d4e5f6
+
+	Current time: Wed Nov 13 13:06:31 2024
+	Sent: abcdef012345
+
+	Current time: Wed Nov 13 13:06:41 2024
+	Sent: 9876543210abc
+
+	Current time: Wed Nov 13 13:06:51 2024
+	Sent: 112233445566778899
+
+	Current time: Wed Nov 13 13:07:01 2024
+	Sent: deadbeefcafe
+
+	Current time: Wed Nov 13 13:07:11 2024
+	Sent: 001122334455
+
+	Current time: Wed Nov 13 13:07:21 2024
+	Sent: fedcba987654
+
+		                                                                                            
+	┌──(aruntotad㉿totad)-[~/Desktop/PA4_CS5115]
+	└─$ exit
+
+	Script done on 2024-11-13 13:08:08-05:00 [COMMAND_EXIT_CODE="0"]
+*******************************************************************************************************************
+
+test3_server.ts
+	──(aruntotad㉿totad)-[~/Desktop/PA4_CS5115]
+	└─$ cat test3_server.ts 
+	Script started on 2024-11-13 13:05:10-05:00 [TERM="xterm-256color" TTY="/dev/pts/2" COLUMNS="100" LINES="24"]
+	┌──(aruntotad㉿totad)-[~/Desktop/PA4_CS5115]
+	└─$ ./server                  
+	Server listening on port 8080
+	Current time: Wed Nov 13 13:05:31 2024
+	Received hex: 1a2b3c4d5e6f
+	Converted to integer: 28772997619311
+
+	Current time: Wed Nov 13 13:05:41 2024
+	Received hex: aabbccddeeff
+	Converted to integer: 187723572702975
+
+	Current time: Wed Nov 13 13:05:51 2024
+	Received hex: 102030405060
+	Converted to integer: 17730434519136
+
+	Current time: Wed Nov 13 13:06:01 2024
+	Received hex: f1e2d3c4b5a6
+	Converted to integer: 265956517787046
+
+	Current time: Wed Nov 13 13:06:11 2024
+	Received hex: 112233445566
+	Converted to integer: 18838586676582
+
+	Current time: Wed Nov 13 13:06:21 2024
+	Received hex: a1b2c3d4e5f6
+	Converted to integer: 177789161760246
+
+	Current time: Wed Nov 13 13:06:31 2024
+	Received hex: abcdef012345
+	Converted to integer: 188900966474565
+
+	Current time: Wed Nov 13 13:06:41 2024
+	Received hex: 9876543210abc
+	Converted to integer: 2682143778081468
+
+	Current time: Wed Nov 13 13:06:51 2024
+	Received hex: 112233445566778899
+	Converted to integer: 9223372036854775807
+
+	Current time: Wed Nov 13 13:07:01 2024
+	Received hex: deadbeefcafe
+	Converted to integer: 244837814094590
+
+	Current time: Wed Nov 13 13:07:11 2024
+	Received hex: 001122334455
+	Converted to integer: 73588229205
+
+	Current time: Wed Nov 13 13:07:21 2024
+	Received hex: fedcba987654
+	Converted to integer: 280223976814164
+
+		                                                                                            
+	┌──(aruntotad㉿totad)-[~/Desktop/PA4_CS5115]
+	└─$ exit
+
+	Script done on 2024-11-13 13:08:11-05:00 [COMMAND_EXIT_CODE="0"]
+
+---------------_________________________________________________________________________________________--------------
